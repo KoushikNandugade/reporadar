@@ -1,6 +1,8 @@
 import React, { useState, useCallback, useMemo, useEffect } from 'react';
+import { Routes, Route, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Star, GitFork, Users, Code2, LayoutDashboard } from 'lucide-react';
+
 import Header from './components/Header';
 import SearchBar from './components/SearchBar';
 import ProfileCard from './components/ProfileCard';
@@ -10,14 +12,44 @@ import RepoList from './components/RepoList';
 import InsightPanel from './components/InsightPanel';
 import { Loader } from './components/Loader';
 import ErrorMessage from './components/ErrorMessage';
-import { fetchUserProfile, fetchUserRepos } from './services/githubApi';
+import DashboardSection from './components/DashboardSection';
+import ProtectedRoute from './components/ProtectedRoute';
 
-const App = () => {
+import Login from './pages/Login';
+import Signup from './pages/Signup';
+import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { fetchUserProfile, fetchUserRepos } from './services/githubApi';
+import { saveSearch, getRecentSearches, getBookmarks, removeBookmark } from './services/firestore';
+
+const MainApp = () => {
+  const { currentUser } = useAuth();
   const [user, setUser] = useState(null);
   const [repos, setRepos] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
   const [hasSearched, setHasSearched] = useState(false);
+  
+  const [recentSearches, setRecentSearches] = useState([]);
+  const [bookmarks, setBookmarks] = useState([]);
+
+  const loadUserData = useCallback(async () => {
+    if (currentUser) {
+      try {
+        const [searches, saved] = await Promise.all([
+          getRecentSearches(currentUser.uid),
+          getBookmarks(currentUser.uid)
+        ]);
+        setRecentSearches(searches);
+        setBookmarks(saved);
+      } catch (err) {
+        console.error("Failed to load user data:", err);
+      }
+    }
+  }, [currentUser]);
+
+  useEffect(() => {
+    loadUserData();
+  }, [loadUserData]);
 
   const handleSearch = useCallback(async (username) => {
     setIsLoading(true);
@@ -30,6 +62,12 @@ const App = () => {
       ]);
       setUser(userData);
       setRepos(reposData);
+      
+      // Save to Firestore
+      if (currentUser) {
+        await saveSearch(currentUser.uid, username);
+        loadUserData(); // Refresh dashboard
+      }
     } catch (err) {
       setError(err.response?.status === 404 ? 'User not found' : 'Failed to fetch data');
       setUser(null);
@@ -37,7 +75,12 @@ const App = () => {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [currentUser, loadUserData]);
+
+  const handleDeleteBookmark = async (id) => {
+    await removeBookmark(id);
+    loadUserData();
+  };
 
   const languageStats = useMemo(() => {
     if (!repos.length) return [];
@@ -62,14 +105,13 @@ const App = () => {
     const starScore = Math.min(totalStars * 2, 40);
     const followerScore = Math.min(user.followers * 1, 20);
     
-    // Activity score based on recent updates
     const recentUpdates = repos.slice(0, 5).filter(repo => {
       const lastUpdate = new Date(repo.updated_at);
       const oneMonthAgo = new Date();
       oneMonthAgo.setMonth(oneMonthAgo.getMonth() - 1);
       return lastUpdate > oneMonthAgo;
     }).length;
-    const activityScore = recentUpdates * 4; // Max 20
+    const activityScore = recentUpdates * 4;
 
     const total = Math.round(repoScore + starScore + followerScore + activityScore);
     
@@ -97,9 +139,7 @@ const App = () => {
     insights.push(`Mostly works with ${topLang} and ${languageStats[1]?.name || 'related'} technologies.`);
     
     if (totalStars > 100) {
-      insights.push(`High popularity with over ${totalStars} total stars across repositories.`);
-    } else if (totalStars > 0) {
-      insights.push(`Building a steady following with ${totalStars} stars.`);
+      insights.push(`High popularity with over ${totalStars} total stars.`);
     }
 
     const lastUpdate = new Date(repos[0]?.updated_at);
@@ -108,11 +148,11 @@ const App = () => {
     if (weeksAgo <= 1) {
       insights.push("Highly consistent contributor with very recent activity.");
     } else if (weeksAgo > 8) {
-      insights.push("Low recent activity; hasn't updated repositories in over 2 months.");
+      insights.push("Low recent activity.");
     }
 
     if (user.followers > 100) {
-      insights.push("Significant community influence with a large follower base.");
+      insights.push("Significant community influence.");
     }
 
     return insights;
@@ -125,22 +165,22 @@ const App = () => {
       <main className="container mx-auto px-4">
         <SearchBar onSearch={handleSearch} isLoading={isLoading} />
 
+        {!isLoading && !error && !user && (
+          <DashboardSection 
+            recentSearches={recentSearches} 
+            bookmarks={bookmarks}
+            onSearchClick={handleSearch}
+            onDeleteBookmark={handleDeleteBookmark}
+          />
+        )}
+
         <AnimatePresence mode="wait">
           {isLoading ? (
-            <motion.div
-              key="loader"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-            >
+            <motion.div key="loader" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
               <Loader />
             </motion.div>
           ) : error ? (
-            <motion.div
-              key="error"
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-            >
+            <motion.div key="error" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
               <ErrorMessage message={error} />
             </motion.div>
           ) : user ? (
@@ -148,9 +188,9 @@ const App = () => {
               key="content"
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.5, ease: "easeOut" }}
+              transition={{ duration: 0.5 }}
             >
-              <ProfileCard user={user} />
+              <ProfileCard user={user} onBookmarkSaved={loadUserData} />
 
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
                 <StatsCard icon={Star} label="Total Stars" value={developerScore?.totalStars || 0} color="orange" />
@@ -178,16 +218,32 @@ const App = () => {
               animate={{ opacity: 1 }}
               className="flex flex-col items-center justify-center py-20 text-slate-400"
             >
-              <div className="p-6 bg-white rounded-3xl border border-slate-100 shadow-sm mb-6">
-                <LayoutDashboard className="w-12 h-12 text-slate-200" />
+              <div className="p-6 bg-[#121214] rounded-3xl border border-white/5 shadow-sm mb-6">
+                <LayoutDashboard className="w-12 h-12 text-blue-500/50" />
               </div>
-              <h2 className="text-xl font-bold text-slate-900 mb-2">Ready to Radar?</h2>
-              <p className="max-w-xs text-center">Search for any GitHub username to get intelligent developer insights.</p>
+              <h2 className="text-xl font-bold text-white mb-2">Ready to Radar?</h2>
+              <p className="max-w-xs text-center text-gray-500">Search for any GitHub username to get intelligent developer insights.</p>
             </motion.div>
           )}
         </AnimatePresence>
       </main>
     </div>
+  );
+};
+
+const App = () => {
+  return (
+    <AuthProvider>
+      <Routes>
+        <Route path="/login" element={<Login />} />
+        <Route path="/signup" element={<Signup />} />
+        <Route path="/" element={
+          <ProtectedRoute>
+            <MainApp />
+          </ProtectedRoute>
+        } />
+      </Routes>
+    </AuthProvider>
   );
 };
 
