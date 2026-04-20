@@ -1,3 +1,22 @@
+🚀 RepoRadar
+
+RepoRadar is an AI-powered developer tool that helps you quickly understand unfamiliar GitHub repositories. It analyzes the codebase, generates meaningful summaries, and visualizes the relationships between different components—reducing the time needed to explore a project from hours to minutes.
+
+❗ Problem Statement
+
+Understanding a new or large codebase is time-consuming and challenging. Developers often need to manually go through multiple files, functions, and dependencies to grasp the overall structure.
+
+💡 Solution
+
+RepoRadar automates code comprehension by combining static code analysis with AI-generated insights and interactive visualizations, making it easier to understand any repository quickly.
+
+✨ Features
+🔍 Codebase Analysis – Parses repositories using AST to extract structure
+🧠 AI-Powered Summaries – Generates explanations for files, functions, and classes
+🔗 Dependency Visualization – Interactive graphs showing relationships between components
+🖥️ User-Friendly UI – Built with Streamlit for easy interaction
+⚡ Faster Onboarding – Helps developers understand projects in minutes
+
 # React + Vite
 
 This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
